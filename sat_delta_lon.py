@@ -1,5 +1,6 @@
 '''script to get lat lon alt for flux tubes connected to ground stations
 '''
+import csv
 import pickle
 import os
 import numpy as np
@@ -11,6 +12,50 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.patches import Rectangle
 import sami2py
 
+def spherical(lats, lons, radii):
+    '''inputs are arrays not scalars... although i guess it should work w/ both
+       alts should be added to earth radius before this function
+    '''
+    #lat and lon to angle and azimuth
+    pol = (90 - lats) * np.pi / 180
+    az = lons * np.pi / 180
+    X = radii * np.cos(az) * np.sin(pol)
+    Y = radii * np.sin(az) * np.sin(pol)
+    Z = radii * np.cos(pol)
+    return X, Y, Z
+
+
+def draw_mag_equator():
+    inc = []
+    lat = []
+    lon = []
+    cnt = 0
+    with open('igrfgridData.csv') as csvfile:
+        igrf = csv.reader(csvfile, delimiter=',')
+        for row in igrf:
+            cnt += 1
+            if cnt < 14:
+                continue
+    
+            inc.append(np.abs(float(row[4])))
+            lat.append(float(row[1]))
+            lon.append(float(row[2]))
+    inc = np.array(inc)
+    lat = np.array(lat)
+    lon = np.array(lon)
+    
+    idx, = np.where(inc < .25)
+    lat = lat[idx]
+    lon = lon[idx]
+
+    mag_eq = np.array([lon, lat, inc])
+    i = np.argsort(mag_eq[0])
+    mag_eq = np.array([mag_eq[0][i], mag_eq[1][i]])
+
+    x, y, z = spherical(mag_eq[1], mag_eq[0], 6371)
+    sf = 950 #scale_factor
+    mlab.plot3d(x/sf, y/sf, z/sf, color=(0, 0, 0))
+
 plot_3D = True
 observatories = {'Haystack':(42.64, -71.45), 'McDonald':(30.67, -104.02),
                  'Arecibo':(18.3, -66.8), 'Zaquencipa':(5.6, -73.52),
@@ -18,11 +63,6 @@ observatories = {'Haystack':(42.64, -71.45), 'McDonald':(30.67, -104.02),
                  'Mercedes':(-34.51, -59.4), 'SAAMER':(-53.79, -67.75),
                  'Mount John':(-43.99, 170.46), 'SAO':(-33.93, 18.48),
                  'Asiago':(45.87, 11.53)}
-
-lat_list = np.array([42.64, 30.67, 18.30, 5.60, -11.95,
-                     -31.80, -34.51, -53.79])
-lon_list = np.array([-71.45, -104.02, -66.80, -73.52,
-                     -76.87, -69.30, -59.40, -67.75])
 
 color_list = [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (0, 0, 0),
               (.5, .5, .5), (1, 0, 1), (0, 1, 1), (.6, .6, .2), (.2, .6, .6),
@@ -45,11 +85,12 @@ if plot_3D:
     continents = mlab.pipeline.surface(Continents_src, color=(0, 0, 0),
                                        extent=[-R_cont+.5, R_cont+.5, -R_cont,
                                                R_cont, -R_cont, R_cont])
-n=0
+    draw_mag_equator()
+n = 0
 for observatory in observatories:
     lon = observatories[observatory][1]
     lat = observatories[observatory][0]
-    print(observatory+'::lat:'+str(lat)+'; lon:'+str(lon))
+    print(observatory+'::lat:'+str(lat)+'; lon:'+str(lon)+'; color:'+str(color_list[n]))
     flux_tube_dict[lon] = {}
     path = sami2py.utils.generate_path('petit', year=2012, lon=int(lon), day=0)
     if not os.path.exists(path):
@@ -72,19 +113,15 @@ for observatory in observatories:
         # based instruments below 251 km, or locations that the ground based
         # instruments can see.
         inds, = np.where((lats > lat-10) & (lats < lat+10) & (np.round(alts) < 251))
-        # does the flux tube have an apex at or above 400 km? this is 
+        # does the flux tube have an apex at or above 400 km? this is
         # necessary for the satellite to observe plasma on the flux tube
         has_400km, = np.where(alts >= 400)
         # if the flux tube doesn't connect with the ground station or the
         # satellite then continue
         if inds.size == 0 or has_400km.size == 0:
-           continue
-#        print('inds:')
-#        print(inds.size)
-#        print('has 400km')
-#        print(has_400km.size)
+            continue
         #do some longitude shifting for calculations
-        if np.max(lons) - np.min(lons) > 200: 
+        if np.max(lons) - np.min(lons) > 200:
             lons = [x+360 if x < 300 else x for x in lons]
 
         #make a dictionary for the flux tube to store all the stuff... why tho
@@ -116,8 +153,6 @@ for observatory in observatories:
         l_200_1.append(lons_200[0])
         l_200_2.append(lons_200[-1])
     n += 1
-    
-    
     dif_1 = []
     dif_2 = []
     for i in range(len(l_400_1)):
@@ -125,20 +160,14 @@ for observatory in observatories:
         dif_2.append(l_200_1[i] - l_400_2[i])
     max_1.append(np.max(np.abs(dif_1)))
     max_2.append(np.max(np.abs(dif_2)))
+    print(np.max(np.abs(dif_1)))
+    print(np.max(np.abs(dif_2)))
 
 sat_delta_lon = {'observatories': observatories, 'flux_tubes': flux_tube_dict,
                  'delta_1': max_1, 'delta2': max_2}
 pickle.dump(sat_delta_lon, open('sat_delta_lon.p', 'wb'))
-   
 if plot_3D:
-#    p = Rectangle((0, -55), 360, 110)
-#    ax.add_patch(p)
-#    art3d.pathpatch_2d_to_3d(p, z = 400, zdir='z')
-#    ax.set_xlim(0,360)
-#    ax.set_ylim(-80,80)
-#    ax.set_zlim(0, 500)
-#    plt.show()
-    mlab.axes(extent = [0,360,-80,80,0,5])
+    mlab.axes(extent=[0, 360, -80, 80, 0, 5])
     mlab.show()
 else:
     plt.show()

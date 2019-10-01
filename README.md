@@ -3,7 +3,10 @@ Plots flux tubes that are "connected" by the air-glow layer above all sky observ
 Uses mayavi to plot all of this in 3d. Resolution of the flux tubes is currently very low.
 
 ![Sample Output](/snapshot.png)
+Using Sami2py
 
+![Sample Output](/snapshot_pysat_magvect.png)
+Using pysatMagVect
 
 This packages also calculates the maximum delta longitude between a satellite and a connected airglow layer flux tube.
 
